@@ -1,0 +1,42 @@
+# ---------------------
+# Global ignores
+# ---------------------
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.*        # Ignore all env files (but not .env.example)
+!.env.example # Keep example env files under version control
+*.log
+*.tmp
+*.swp
+*.DS_Store
+*.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ---------------------
+# Frontend (Next.js)
+# ---------------------
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# ---------------------
+# Backend (Node.js)
+# ---------------------
+backend/node_modules/
+backend/.env
+
+# ---------------------
+# Docker
+# ---------------------
+*.pid
+*.seed
+*.bak
+docker-compose.override.yml

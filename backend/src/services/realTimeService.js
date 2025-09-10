@@ -1,82 +1,44 @@
-const WebSocket = require('ws')
-const domaService = require('./domaService')
-const aiScoringService = require('./aiScoringService')
-const marketIntelligenceService = require('./marketIntelligenceService')
+const domaIntegrationService = require('./domaIntegrationService')
+const geminiScoringService = require('./geminiScoringService') // Fix this line
+const { Server } = require('socket.io')
 
 class RealTimeService {
     constructor() {
-        this.wss = null
-        this.clients = new Set()
-        this.eventStream = null
+        this.io = null
+        this.eventProcessor = null
+        this.lastEventId = null
         this.isPolling = false
-        this.lastEventId = 0
-        this.marketAnalysisInterval = null
+        this.connectedClients = new Set()
     }
 
     initialize(server) {
-        this.wss = new WebSocket.Server({ server })
-
-        this.wss.on('connection', (ws, req) => {
-            console.log('New WebSocket client connected')
-            this.clients.add(ws)
-
-            this.sendMarketUpdate(ws)
-
-            ws.on('message', async (message) => {
-                try {
-                    const data = JSON.parse(message)
-                    await this.handleClientMessage(ws, data)
-                } catch (error) {
-                    console.error('WebSocket message error:', error)
-                }
-            })
-
-            ws.on('close', () => {
-                this.clients.delete(ws)
-                console.log('WebSocket client disconnected')
-            })
+        this.io = new Server(server, {
+            cors: {
+                origin: process.env.FRONTEND_URL || "http://localhost:3000",
+                methods: ["GET", "POST"]
+            }
         })
 
+        this.setupSocketHandlers()
         this.startEventPolling()
-        this.startMarketAnalysis()
-        console.log('🔴 Enhanced Real-time service initialized')
+        console.log('Real-time service initialized with Doma integration')
     }
 
-    async startMarketAnalysis() {
-        this.marketAnalysisInterval = setInterval(async () => {
-            try {
-                const trends = await marketIntelligenceService.analyzeTrends()
-                this.broadcastToClients({
-                    type: 'market_trends',
-                    data: trends,
-                    timestamp: new Date()
-                })
-            } catch (error) {
-                console.error('Market analysis error:', error)
-            }
-        }, 30000)
+    setupSocketHandlers() {
+        this.io.on('connection', (socket) => {
+            console.log('Client connected:', socket.id)
+            this.connectedClients.add(socket.id)
 
-        setTimeout(async () => {
-            const trends = await marketIntelligenceService.analyzeTrends()
-            this.broadcastToClients({
-                type: 'market_trends',
-                data: trends,
-                timestamp: new Date()
+            socket.on('disconnect', () => {
+                console.log('Client disconnected:', socket.id)
+                this.connectedClients.delete(socket.id)
             })
-        }, 2000)
-    }
 
-    async sendMarketUpdate(ws) {
-        try {
-            const trends = await marketIntelligenceService.analyzeTrends()
-            this.sendToClient(ws, {
-                type: 'market_update',
-                data: trends,
-                timestamp: new Date()
+            socket.on('subscribe-domain', (domain) => {
+                socket.join(`domain-${domain}`)
+                console.log(`Client ${socket.id} subscribed to ${domain}`)
             })
-        } catch (error) {
-            console.error('Market update error:', error)
-        }
+        })
     }
 
     async startEventPolling() {
@@ -85,158 +47,115 @@ class RealTimeService {
 
         const pollEvents = async () => {
             try {
-                const events = await domaService.pollEvents(['NAME_TOKEN_MINTED', 'NAME_TOKEN_TRANSFERRED'], 10)
+                const events = await domaIntegrationService.pollEvents(10)
 
-                if (events && events.events && events.events.length > 0) {
+                if (events.events && events.events.length > 0) {
+                    console.log(`Received ${events.events.length} new events`)
+
                     for (const event of events.events) {
-                        await this.processEvent(event)
+                        await this.processRealEvent(event)
                     }
 
-                    if (events.lastId > this.lastEventId) {
-                        await domaService.acknowledgeEvents(events.lastId)
+                    if (events.lastId) {
+                        await domaIntegrationService.acknowledgeEvents(events.lastId)
+                        console.log(`Acknowledged events up to ID: ${events.lastId}`)
                         this.lastEventId = events.lastId
                     }
                 }
             } catch (error) {
-                console.error('Event polling error:', error)
+                console.error('Event polling error:', error.message)
             }
-
-            setTimeout(pollEvents, 30000)
         }
 
-        pollEvents()
+        // Poll every 10 seconds
+        setInterval(pollEvents, 10000)
+
+        // Initial poll
+        await pollEvents()
     }
 
-    async processEvent(event) {
+    async processRealEvent(event) {
         try {
-            let processedData = null
+            console.log(`Processing event: ${event.type} for ${event.eventData?.name || 'unknown domain'}`)
 
             switch (event.type) {
                 case 'NAME_TOKEN_MINTED':
-                    processedData = await this.processTokenMinted(event)
+                    await this.processTokenMinted(event)
                     break
                 case 'NAME_TOKEN_TRANSFERRED':
-                    processedData = await this.processTokenTransferred(event)
+                    await this.processTokenTransferred(event)
+                    break
+                case 'NAME_LISTED':
+                    await this.processListing(event)
                     break
                 default:
-                    return
-            }
-
-            if (processedData) {
-                this.broadcastToClients({
-                    type: 'domain_event',
-                    event: event.type,
-                    data: processedData,
-                    timestamp: new Date()
-                })
+                    console.log(`Unhandled event type: ${event.type}`)
             }
         } catch (error) {
-            console.error('Event processing error:', error)
+            console.error('Event processing error:', error.message)
         }
     }
 
     async processTokenMinted(event) {
         try {
-            const { name, owner, networkId } = event.eventData || {}
+            const domain = event.eventData?.name || event.name
+            if (!domain) return
 
-            if (!name) {
-                console.warn('Missing name in token minted event')
-                return null
+            // Fix: Use correct service reference
+            const analysis = await geminiScoringService.analyzeWithAdvancedAI(domain)
+
+            const notification = {
+                type: 'TOKENIZATION_OPPORTUNITY',
+                domain,
+                message: `${domain} was tokenized - AI analysis shows ${analysis.scores?.investmentGrade || 75}/100 score`,
+                estimatedVolume: analysis.valuation?.estimatedCeiling || 5000,
+                timestamp: new Date().toISOString(),
+                onChain: true,
+                txHash: event.eventData?.txHash || event.txHash
             }
 
-            // FIXED: Pass domain name as string
-            const aiScore = await aiScoringService.predictScore(name)
-            const domainInfo = await domaService.getDomainInfo(name)
-
-            return {
-                action: 'minted',
-                domain: name,
-                owner,
-                networkId,
-                aiScore,
-                estimatedValue: this.estimateValue(aiScore),
-                recommendation: this.getRecommendation(aiScore),
-                tokenized: true,
-                transactionCount: domainInfo.transactionCount
-            }
+            this.broadcastOpportunity(notification)
         } catch (error) {
-            console.error('Process token minted error:', error)
-            return null
+            console.error('Process minted error:', error)
         }
     }
 
     async processTokenTransferred(event) {
-        try {
-            const { name, transferredTo, transferredFrom } = event.eventData || {}
+        const domain = event.eventData?.name || event.name
+        if (!domain) return
 
-            if (!name) {
-                console.warn('Missing name in token transferred event')
-                return null
-            }
-
-            // FIXED: Pass domain name as string
-            const aiScore = await aiScoringService.predictScore(name)
-
-            return {
-                action: 'transferred',
-                domain: name,
-                from: transferredFrom,
-                to: transferredTo,
-                aiScore,
-                newOwner: transferredTo,
-                timestamp: event.eventData?.createdAt
-            }
-        } catch (error) {
-            console.error('Process token transferred error:', error)
-            return null
+        const notification = {
+            type: 'TRANSFER_DETECTED',
+            domain,
+            message: `${domain} ownership transferred - potential trading activity`,
+            timestamp: new Date().toISOString(),
+            onChain: true
         }
+
+        this.broadcastOpportunity(notification)
     }
 
-    async handleClientMessage(ws, data) {
-        switch (data.type) {
-            case 'subscribe_domain':
-                // Handle domain subscription
-                break
-            case 'get_market_update':
-                await this.sendMarketUpdate(ws)
-                break
+    async processListing(event) {
+        const domain = event.eventData?.name || event.name
+        const price = event.eventData?.price || 'Unknown'
+
+        const notification = {
+            type: 'NEW_LISTING',
+            domain,
+            message: `${domain} listed for ${price} - analyze for arbitrage opportunities`,
+            estimatedVolume: parseFloat(price) || 1000,
+            timestamp: new Date().toISOString(),
+            onChain: true
         }
+
+        this.broadcastOpportunity(notification)
     }
 
-    estimateValue(score) {
-        const baseValue = 1000
-        const multiplier = Math.pow(score / 50, 2)
-        return Math.round(baseValue * multiplier)
-    }
-
-    getRecommendation(score) {
-        if (score >= 85) return 'STRONG_BUY'
-        if (score >= 70) return 'BUY'
-        if (score >= 50) return 'HOLD'
-        return 'PASS'
-    }
-
-    broadcastToClients(data) {
-        this.clients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-                this.sendToClient(client, data)
-            }
-        })
-    }
-
-    sendToClient(client, data) {
-        try {
-            client.send(JSON.stringify(data))
-        } catch (error) {
-            console.error('Send to client error:', error)
+    broadcastOpportunity(notification) {
+        if (this.connectedClients.size > 0) {
+            this.io.emit('live-opportunity', notification)
+            console.log(`Broadcasted opportunity: ${notification.type} for ${notification.domain}`)
         }
-    }
-
-    shutdown() {
-        if (this.marketAnalysisInterval) {
-            clearInterval(this.marketAnalysisInterval)
-        }
-        this.isPolling = false
     }
 }
 

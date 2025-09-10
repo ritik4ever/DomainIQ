@@ -1,170 +1,195 @@
-const {
-    calculateBrandabilityScore,
-    calculateMemorabilityScore,
-    calculateLinguisticScore,
-    calculateMarketScore
-} = require('../utils/scoring-algorithms')
+const domaBlockchainService = require('./domaBlockchainService')
 
-class ScoringService {
-    async calculateDomainScore(domain) {
+class RealTransactionService {
+    constructor() {
+        this.executedTransactions = new Map()
+        this.volumeGenerated = 0
+        this.isTestnet = true // We're using Doma testnet
+        console.log('Real transaction service initialized for Doma testnet')
+    }
+
+    async executeRealTransaction(domain, actionType, parameters) {
         try {
-            const { name, tld, length } = domain
+            console.log(`Executing REAL ${actionType} for ${domain} on Doma testnet`)
 
-            // Calculate individual scoring components
-            const brandability = calculateBrandabilityScore(name)
-            const memorability = calculateMemorabilityScore(name)
-            const linguistic = calculateLinguisticScore(name)
-            const market = calculateMarketScore(name, tld)
+            let result
+            switch (actionType) {
+                case 'TOKENIZE':
+                    result = await this.executeRealTokenization(domain, parameters)
+                    break
+                case 'CREATE_LISTING':
+                    result = await this.executeRealListing(domain, parameters)
+                    break
+                case 'CREATE_OFFER':
+                    result = await this.executeRealOffer(domain, parameters)
+                    break
+                default:
+                    throw new Error(`Unsupported transaction type: ${actionType}`)
+            }
 
-            // Weighted overall score
-            const overallScore = Math.round(
-                (brandability * 0.3) +
-                (memorability * 0.25) +
-                (linguistic * 0.25) +
-                (market * 0.2)
-            )
+            // Track the transaction
+            this.volumeGenerated += result.volume || 0
+            this.executedTransactions.set(`${domain}-${actionType}-${Date.now()}`, result)
 
-            // Determine trend (simplified)
-            const trend = overallScore >= 75 ? 'up' : overallScore >= 60 ? 'stable' : 'down'
+            console.log(`✅ REAL transaction executed: ${result.message}`)
+            console.log(`🔗 Explorer link: ${result.explorerUrl}`)
 
-            // Estimate price based on score and other factors
-            const price = this.estimatePrice(overallScore, tld, length, name)
+            return result
+
+        } catch (error) {
+            console.error(`❌ Real transaction error:`, error.message)
+            throw error
+        }
+    }
+
+    async executeRealTokenization(domain, parameters) {
+        try {
+            // Execute real tokenization on Doma testnet
+            const result = await domaBlockchainService.tokenizeDomain(domain)
 
             return {
-                score: overallScore,
-                brandability,
-                memorability,
-                linguistic,
-                market,
-                trend,
-                price
+                success: true,
+                transactionType: 'TOKENIZE',
+                domain: domain,
+                network: 'Doma Testnet',
+                volume: 1000, // Estimated value
+                txHash: result.txHash,
+                blockNumber: result.blockNumber,
+                gasUsed: result.gasUsed,
+                explorerUrl: result.explorerUrl,
+                message: `Successfully tokenized ${domain} on Doma testnet`,
+                timestamp: result.timestamp,
+                realTransaction: true, // This is a REAL transaction
+                owner: result.owner
+            }
+
+        } catch (error) {
+            console.error('Real tokenization error:', error)
+            throw new Error(`Tokenization failed: ${error.message}`)
+        }
+    }
+
+    async executeRealListing(domain, parameters) {
+        try {
+            const { price } = parameters
+            const priceInEth = price / 1000 // Convert to reasonable ETH amount for testnet
+
+            // Execute real listing on Doma testnet
+            const result = await domaBlockchainService.createMarketplaceListing(domain, priceInEth)
+
+            return {
+                success: true,
+                transactionType: 'CREATE_LISTING',
+                domain: domain,
+                price: price,
+                priceInEth: priceInEth,
+                network: 'Doma Testnet',
+                volume: price,
+                txHash: result.txHash,
+                blockNumber: result.blockNumber,
+                gasUsed: result.gasUsed,
+                explorerUrl: result.explorerUrl,
+                message: `Successfully listed ${domain} for ${priceInEth} ETH on Doma testnet`,
+                timestamp: result.timestamp,
+                realTransaction: true // This is a REAL transaction
+            }
+
+        } catch (error) {
+            console.error('Real listing error:', error)
+            throw new Error(`Listing creation failed: ${error.message}`)
+        }
+    }
+
+    async executeRealOffer(domain, parameters) {
+        // For offers, we'll create a simulated transaction for now
+        // In a full implementation, this would interact with an orderbook contract
+        const { price } = parameters
+
+        return {
+            success: true,
+            transactionType: 'CREATE_OFFER',
+            domain: domain,
+            price: price,
+            network: 'Doma Testnet',
+            volume: price,
+            txHash: this.generatePlaceholderTxHash(),
+            message: `Offer created for ${domain} at $${price.toLocaleString()}`,
+            timestamp: new Date().toISOString(),
+            realTransaction: false, // This is simulated
+            note: 'Offer functionality requires orderbook contract integration'
+        }
+    }
+
+    async verifyTransaction(txHash) {
+        try {
+            console.log(`Verifying transaction on Doma testnet: ${txHash}`)
+
+            const verification = await domaBlockchainService.verifyTransaction(txHash)
+
+            return {
+                txHash: txHash,
+                ...verification,
+                network: 'Doma Testnet'
+            }
+
+        } catch (error) {
+            console.error('Transaction verification error:', error)
+            return {
+                txHash: txHash,
+                verified: false,
+                error: error.message,
+                network: 'Doma Testnet'
+            }
+        }
+    }
+
+    async getNetworkStatus() {
+        try {
+            const networkInfo = await domaBlockchainService.getNetworkInfo()
+            const balance = await domaBlockchainService.getBalance()
+
+            return {
+                ...networkInfo,
+                walletBalance: balance?.balance || '0',
+                walletAddress: balance?.address || 'Not connected',
+                canExecuteTransactions: !!balance?.address
             }
         } catch (error) {
-            console.error('Scoring error:', error)
             return {
-                score: 50,
-                brandability: 50,
-                memorability: 50,
-                linguistic: 50,
-                market: 50,
-                trend: 'stable',
-                price: '$1,000'
+                network: 'Doma Testnet',
+                connected: false,
+                error: error.message,
+                canExecuteTransactions: false
             }
         }
     }
 
-    estimatePrice(score, tld, length, name) {
-        let basePrice = 1000
-
-        // TLD multipliers
-        const tldMultipliers = {
-            '.com': 3,
-            '.io': 2,
-            '.ai': 2.5,
-            '.crypto': 1.8,
-            '.defi': 1.5,
-            '.xyz': 1
+    generatePlaceholderTxHash() {
+        const chars = '0123456789abcdef'
+        let hash = '0x'
+        for (let i = 0; i < 64; i++) {
+            hash += chars[Math.floor(Math.random() * chars.length)]
         }
-
-        // Length penalties/bonuses
-        const lengthMultiplier = length <= 4 ? 2.5 :
-            length <= 6 ? 1.5 :
-                length <= 8 ? 1 : 0.7
-
-        // Score multiplier
-        const scoreMultiplier = score / 50
-
-        const estimatedPrice = basePrice *
-            (tldMultipliers[tld] || 1) *
-            lengthMultiplier *
-            scoreMultiplier
-
-        return `$${Math.round(estimatedPrice).toLocaleString()}`
+        return hash
     }
 
-    async getDetailedAnalysis(domain) {
-        const scoring = await this.calculateDomainScore(domain)
+    getVolumeGenerationStats() {
+        const transactions = Array.from(this.executedTransactions.values())
+        const realTransactions = transactions.filter(t => t.realTransaction)
 
         return {
-            domain: domain.name,
-            scoring,
-            recommendations: this.generateRecommendations(scoring),
-            comparables: await this.findComparables(domain.name),
-            marketInsights: this.getMarketInsights(domain.name)
-        }
-    }
-
-    generateRecommendations(scoring) {
-        const recommendations = []
-
-        if (scoring.score >= 80) {
-            recommendations.push({
-                type: 'strong_buy',
-                message: 'Excellent domain with strong commercial potential'
-            })
-        } else if (scoring.score >= 60) {
-            recommendations.push({
-                type: 'moderate_buy',
-                message: 'Good domain suitable for branding or development'
-            })
-        } else {
-            recommendations.push({
-                type: 'pass',
-                message: 'Consider alternatives with better scoring metrics'
-            })
-        }
-
-        if (scoring.brandability < 60) {
-            recommendations.push({
-                type: 'caution',
-                message: 'Low brandability score may limit commercial appeal'
-            })
-        }
-
-        return recommendations
-    }
-
-    async findComparables(domainName) {
-        // Simplified comparable domain logic
-        return [
-            { name: 'similar1.com', price: '$5,000', sold: '2024-01-15' },
-            { name: 'similar2.io', price: '$3,200', sold: '2024-02-20' },
-            { name: 'similar3.ai', price: '$7,500', sold: '2024-03-10' }
-        ]
-    }
-
-    getMarketInsights(domainName) {
-        return {
-            category: 'Technology',
-            demand: 'High',
-            liquidity: 'Medium',
-            growthPotential: 'Strong'
-        }
-    }
-
-    async getMarketTrends() {
-        return {
-            topTlds: [
-                { tld: '.com', change: '+8.5%', volume: 1250 },
-                { tld: '.io', change: '+15.2%', volume: 890 },
-                { tld: '.ai', change: '+22.1%', volume: 650 }
-            ],
-            categories: [
-                { category: 'AI/Tech', change: '+18.9%' },
-                { category: 'DeFi', change: '+12.3%' },
-                { category: 'Gaming', change: '+7.8%' }
-            ]
-        }
-    }
-
-    async getDomainAnalytics(domainName) {
-        return {
-            traffic: Math.floor(Math.random() * 10000),
-            backlinks: Math.floor(Math.random() * 500),
-            mentions: Math.floor(Math.random() * 100),
-            socialSignals: Math.floor(Math.random() * 1000)
+            totalTransactions: transactions.length,
+            realTransactions: realTransactions.length,
+            simulatedTransactions: transactions.length - realTransactions.length,
+            totalVolume: this.volumeGenerated,
+            realVolume: realTransactions.reduce((sum, t) => sum + (t.volume || 0), 0),
+            averageTransactionValue: transactions.length > 0 ?
+                this.volumeGenerated / transactions.length : 0,
+            lastRealTransaction: realTransactions[realTransactions.length - 1] || null,
+            network: 'Doma Testnet',
+            testnetMode: this.isTestnet
         }
     }
 }
 
-module.exports = new ScoringService()
+module.exports = new RealTransactionService()

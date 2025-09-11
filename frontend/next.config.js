@@ -33,6 +33,10 @@ const nextConfig = {
             },
         ]
     },
+
+    experimental: {
+        proxyTimeout: 60000, // 60 seconds
+    }
 }
 
 module.exports = nextConfig

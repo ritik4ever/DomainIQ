@@ -11,6 +11,7 @@ export default function Navigation() {
     const navigation = [
         { name: 'Home', href: '/' },
         { name: 'Dashboard', href: '/dashboard' },
+        { name: 'DeFi', href: '/defi' },
         { name: 'Analytics', href: '/analytics' },
     ]
 

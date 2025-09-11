@@ -4,6 +4,23 @@ const geminiScoringService = require('../services/geminiScoringService')
 const gtldTrendAnalyzer = require('../services/gtldTrendAnalyzer')
 const socialMediaService = require('../services/socialMediaService')
 const domaIntegrationService = require('../services/domaIntegrationService')
+const defiService = require('../services/defiIntegrationService')
+
+
+router.post('/fractionalize/:domain', async (req, res) => {
+    const { domain } = req.params
+    const { shares, valuation } = req.body
+    const result = await defiService.fractionalizeAsset(domain, shares, valuation)
+    res.json(result)
+})
+
+router.post('/stake/:domain', async (req, res) => {
+    const { domain } = req.params
+    const { period, amount } = req.body
+    const result = await defiService.stakeDomain(domain, period, amount)
+    res.json(result)
+})
+
 
 // Enhanced search endpoint with guaranteed results
 router.get('/search', async (req, res) => {

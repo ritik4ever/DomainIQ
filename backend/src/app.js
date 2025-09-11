@@ -17,6 +17,7 @@ console.log('   DOMA_API_KEY:', process.env.DOMA_API_KEY ? '✅ Found' : '❌ Mi
 console.log('   DOMA_PRIVATE_KEY:', process.env.DOMA_PRIVATE_KEY ? '✅ Found' : '❌ Missing')
 
 
+
 // Middleware
 app.use(cors({
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
@@ -70,6 +71,23 @@ routes.forEach(({ path, file }) => {
     } catch (error) {
         console.error(`❌ Failed to load ${path}:`, error.message)
     }
+})
+
+// 1. ADD DEFI ROUTES TO BACKEND
+// backend/src/app.js - Add this after your existing routes
+const defiRoutes = require('./routes/defi')
+app.use('/api/defi', defiRoutes)
+console.log('✅ /api/defi routes loaded')
+
+// Also add DeFi service initialization
+const defiIntegrationService = require('./services/defiIntegrationService')
+console.log('✅ DeFi integration service initialized')
+
+// 2. UPDATE PROXY ROUTES FOR FRONTEND
+// Add to your existing proxy configuration
+app.use('/api/proxy/defi', (req, res) => {
+    const targetUrl = `http://localhost:3001/api/defi${req.path}`
+    // Your existing proxy logic
 })
 
 // Service initialization with comprehensive error handling

@@ -3,15 +3,21 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { useAccount } from 'wagmi'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ExternalLink, TrendingUp, Heart, HeartHandshake, CheckCircle, Zap, DollarSign } from 'lucide-react'
+import { Progress } from '@/components/ui/progress'
+import { ArrowLeft, ExternalLink, TrendingUp, Heart, HeartHandshake, CheckCircle, Zap, DollarSign, Activity } from 'lucide-react'
 import Link from 'next/link'
 import { useWatchlist } from '@/hooks/useWatchlist'
 import ScoreChart from '@/components/ScoreChart'
 import { TradingExecution } from '@/components/TradingExecution'
 import { LiveOpportunities } from '@/components/LiveOpportunities'
+import { DeFiActionButtons } from '@/components/DeFiActionButtons'
+import { TransactionResultModal } from '@/components/TransactionResultModal'
+import { testDeFiFlow } from '@/lib/defi-test-utils'
+import { trackDeFiVolume } from '@/lib/volume-tracking-utils'
+
 
 interface DomainData {
     name: string
@@ -26,6 +32,7 @@ interface DomainData {
     owner?: string
     networkId?: string
     domaScore?: number
+    estimatedValue?: number
     recommendations?: Array<{
         type: string
         message: string
@@ -44,9 +51,25 @@ function DomainDetailPage() {
     const [opportunitiesLoading, setOpportunitiesLoading] = useState(false)
     const [networkStatus, setNetworkStatus] = useState<any>(null)
     const [verificationResult, setVerificationResult] = useState<any>(null)
+    const [transactionResult, setTransactionResult] = useState<any>(null)
+    const [showTransactionModal, setShowTransactionModal] = useState(false)
 
     const { addToWatchlist, removeFromWatchlist, isInWatchlist } = useWatchlist()
     const isWatched = isInWatchlist(domainName)
+
+    // ADD THESE FUNCTIONS:
+    const handleTest = () => {
+        console.log(`Testing DeFi flow for domain: ${domainName}`)
+        testDeFiFlow()
+    }
+
+    // Test automatically in development
+    useEffect(() => {
+        if (process.env.NODE_ENV === 'development') {
+            console.log(`Auto-testing DeFi for domain: ${domainName}`)
+            testDeFiFlow()
+        }
+    }, [domainName])
 
     // ✅ Fetch network status on mount
     useEffect(() => {
@@ -93,20 +116,43 @@ function DomainDetailPage() {
                 setVerificationResult(verification)
             }
 
-            return {
+            const result = {
                 success: true,
                 message: data.message,
                 txHash: data.txHash,
                 volume: data.volume,
+                domain: domain,
                 realTransaction: data.realTransaction,
                 explorerUrl: data.explorerUrl,
                 blockNumber: data.blockNumber
             }
+
+            // Track DeFi volume
+            trackDeFiVolume(result)
+
+            return result
         } catch (error: any) {
             const errorMessage = error instanceof Error ? error.message : 'Transaction failed'
             console.error('Trade execution error:', error)
             throw new Error(errorMessage)
         }
+    }
+
+    const handleDeFiTransaction = (result: any) => {
+        setTransactionResult(result)
+        setShowTransactionModal(true)
+
+        // Track DeFi volume
+        if (result.success) {
+            trackDeFiVolume({
+                domain: params.domain,
+                volume: result.volume,
+                txHash: result.txHash
+            })
+        }
+
+        // Optional: Update domain data after transaction
+        // refreshDomainData()
     }
 
     const fetchOpportunities = async () => {
@@ -173,7 +219,8 @@ function DomainDetailPage() {
                     price: '$2,500',
                     tokenized: false,
                     onChainActivity: 0,
-                    domaScore: 78
+                    domaScore: 78,
+                    estimatedValue: 2500
                 })
                 await fetchOpportunities()
             } catch (error) {
@@ -472,6 +519,18 @@ function DomainDetailPage() {
                                     {isWatched ? 'Remove from Portfolio' : 'Add to Portfolio'}
                                 </Button>
 
+                                {/* ADD THIS TEST BUTTON (DEVELOPMENT ONLY): */}
+                                {process.env.NODE_ENV === 'development' && (
+                                    <Button
+                                        variant="outline"
+                                        onClick={handleTest}
+                                        className="w-full"
+                                    >
+                                        <Activity className="w-4 h-4 mr-2" />
+                                        Test DeFi Flow
+                                    </Button>
+                                )}
+
                                 {actionMessage && (
                                     <div className="text-sm p-2 rounded bg-green-50 text-green-600">
                                         <CheckCircle className="w-4 h-4 mr-1 inline" />
@@ -482,6 +541,22 @@ function DomainDetailPage() {
                         </Card>
                     </div>
                 </div>
+
+                {/* Add DeFi Actions Section */}
+                <div className="mt-8">
+                    <DeFiActionButtons
+                        domain={domainName}
+                        estimatedValue={domainData?.estimatedValue || 2500}
+                        onTransactionComplete={handleDeFiTransaction}
+                    />
+                </div>
+
+                {/* Transaction Result Modal */}
+                <TransactionResultModal
+                    isOpen={showTransactionModal}
+                    onClose={() => setShowTransactionModal(false)}
+                    result={transactionResult}
+                />
             </div>
         </div>
     )
